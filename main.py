@@ -25,8 +25,12 @@ MENU_ITEMS = ["MUSIC", "DRAWING", "SYSTEM", "GAMES"]
 GAME_ITEMS = ["DINO", "CATCH", "FRUIT"]
 MUSIC_ITEMS = ["LOCAL MUSIC", "SPOTIFY"]
 
-# ── HUD accent colour (matches dashboard cyan) ────────────
-HUD_ACCENT = (204, 255, 0)   # BGR for #00FFCC
+# ── HUD accent colour (matches dashboard #00FFCC cyan) ────
+HUD_ACCENT = (204, 255, 0)   # BGR equivalent of RGB(0, 255, 204)
+
+# ── "Waiting for Hand" pulse animation ─────────────────────
+PULSE_FREQ = 2       # cycles per second
+PULSE_MAX = 255      # peak green-channel intensity
 
 
 def draw_hud_bar(frame, y1, y2):
@@ -230,10 +234,10 @@ while True:
         for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
             landmarks = []
 
-            for id_lm, lm in enumerate(hand_landmarks.landmark):
+            for lm_id, lm in enumerate(hand_landmarks.landmark):
                 cx = int(lm.x * w)
                 cy = int(lm.y * h)
-                landmarks.append((id_lm, cx, cy))
+                landmarks.append((lm_id, cx, cy))
 
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             hand_label = results.multi_handedness[idx].classification[0].label
@@ -303,7 +307,7 @@ while True:
     # ── "Waiting for Hand" calibration overlay ─────────────
     if not _hand_seen:
         draw_hud_bar(frame, h // 2 - 30, h // 2 + 30)
-        pulse = int(abs((time.time() * 2 % 2) - 1) * 255)
+        pulse = int(abs((time.time() * PULSE_FREQ % 2) - 1) * PULSE_MAX)
         cv2.putText(frame, "Waiting for Hand...", (w // 2 - 120, h // 2 + 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (pulse, 255, pulse), 2)
 

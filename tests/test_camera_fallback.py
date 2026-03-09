@@ -1,7 +1,19 @@
 """Tests for camera initialization fallback logic."""
 
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
+
+
+def _open_camera():
+    """Replica of main.open_camera() for isolated testing (avoids main.py side-effects)."""
+    import cv2
+
+    for idx in (1, 0):
+        cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
+        if cap.isOpened():
+            return cap
+        cap.release()
+    return None
 
 
 class TestCameraFallback(unittest.TestCase):
@@ -14,21 +26,9 @@ class TestCameraFallback(unittest.TestCase):
         cap.isOpened.return_value = True
         mock_vc.return_value = cap
 
-        # Import the function inline to avoid side-effects from main.py imports
-        # Instead, replicate the logic under test:
         import cv2
-
-        def open_camera():
-            for idx in (1, 0):
-                cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
-                if cap.isOpened():
-                    return cap
-                cap.release()
-            return None
-
-        result = open_camera()
+        result = _open_camera()
         self.assertIsNotNone(result)
-        # First call should be with index 1
         mock_vc.assert_called_with(1, cv2.CAP_ANY)
 
     @patch("cv2.VideoCapture")
@@ -40,17 +40,7 @@ class TestCameraFallback(unittest.TestCase):
         cap_good.isOpened.return_value = True
         mock_vc.side_effect = [cap_bad, cap_good]
 
-        import cv2
-
-        def open_camera():
-            for idx in (1, 0):
-                cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
-                if cap.isOpened():
-                    return cap
-                cap.release()
-            return None
-
-        result = open_camera()
+        result = _open_camera()
         self.assertIsNotNone(result)
         self.assertEqual(mock_vc.call_count, 2)
 
@@ -61,17 +51,7 @@ class TestCameraFallback(unittest.TestCase):
         cap.isOpened.return_value = False
         mock_vc.return_value = cap
 
-        import cv2
-
-        def open_camera():
-            for idx in (1, 0):
-                cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
-                if cap.isOpened():
-                    return cap
-                cap.release()
-            return None
-
-        result = open_camera()
+        result = _open_camera()
         self.assertIsNone(result)
 
 
