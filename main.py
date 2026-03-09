@@ -1,5 +1,6 @@
 import cv2
 import mediapipe as mp
+import time
 from controllers.music_controller import MusicController
 from controllers.drawing_controller import DrawingBoardController
 from command_layer.command_dispatcher import CommandDispatcher
@@ -20,10 +21,20 @@ import threading
 
 
 # ── Menu UI configuration ──────────────────────────────────
-# Top-level menu items (games accessible via submenu)
 MENU_ITEMS = ["MUSIC", "DRAWING", "SYSTEM", "GAMES"]
 GAME_ITEMS = ["DINO", "CATCH", "FRUIT"]
 MUSIC_ITEMS = ["LOCAL MUSIC", "SPOTIFY"]
+
+# ── HUD accent colour (matches dashboard cyan) ────────────
+HUD_ACCENT = (204, 255, 0)   # BGR for #00FFCC
+
+
+def draw_hud_bar(frame, y1, y2):
+    """Draw a semi-transparent dark bar across the frame."""
+    overlay = frame.copy()
+    h, w = frame.shape[:2]
+    cv2.rectangle(overlay, (0, y1), (w, y2), (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
 
 
 def draw_menu(frame, menu_items, selected_index, title="GESTURE HUB"):
@@ -32,7 +43,7 @@ def draw_menu(frame, menu_items, selected_index, title="GESTURE HUB"):
     Scales all UI elements relative to frame dimensions.
     """
     h, w = frame.shape[:2]
-    
+
     # Calculate responsive dimensions
     panel_width = int(w * 0.75)
     panel_height = int(h * 0.7)
@@ -40,59 +51,56 @@ def draw_menu(frame, menu_items, selected_index, title="GESTURE HUB"):
     panel_y1 = int(h * 0.15)
     panel_x2 = panel_x1 + panel_width
     panel_y2 = panel_y1 + panel_height
-    
+
     # Semi-transparent dark background for menu
     overlay = frame.copy()
-    cv2.rectangle(overlay, (panel_x1, panel_y1), (panel_x2, panel_y2), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
-    
-    # Title at top of panel
+    cv2.rectangle(overlay, (panel_x1, panel_y1), (panel_x2, panel_y2), (15, 15, 15), -1)
+    cv2.addWeighted(overlay, 0.70, frame, 0.30, 0, frame)
+
+    # Border
+    cv2.rectangle(frame, (panel_x1, panel_y1), (panel_x2, panel_y2), (60, 60, 60), 1)
+
+    # Title
     title_y = panel_y1 + int(panel_height * 0.12)
-    title_font_scale = max(0.7, w / 800)  # Scale font based on width
+    title_font_scale = max(0.7, w / 800)
     cv2.putText(
-        frame, title, 
-        (w // 2 - int(len(title) * title_font_scale * 25), title_y),
-        cv2.FONT_HERSHEY_SIMPLEX, title_font_scale, (0, 255, 255), 2
+        frame, title,
+        (w // 2 - int(len(title) * title_font_scale * 12), title_y),
+        cv2.FONT_HERSHEY_SIMPLEX, title_font_scale, HUD_ACCENT, 2,
     )
-    
-    # Calculate menu item positions
+
+    # Menu items
     item_start_y = panel_y1 + int(panel_height * 0.28)
     item_spacing = int(panel_height * 0.18)
     item_font_scale = max(0.6, w / 900)
-    
-    # Draw menu items
+
     for i, item in enumerate(menu_items):
         y = item_start_y + i * item_spacing
-        
-        # Highlight selected item with green background
+
         if i == selected_index:
-            highlight_x1 = panel_x1 + int(panel_width * 0.05)
-            highlight_x2 = panel_x2 - int(panel_width * 0.05)
-            highlight_y1 = y - int(item_spacing * 0.35)
-            highlight_y2 = y + int(item_spacing * 0.25)
-            cv2.rectangle(frame, (highlight_x1, highlight_y1), (highlight_x2, highlight_y2), (0, 255, 0), -1)
-            text_color = (0, 0, 0)  # Black text on green background
+            hx1 = panel_x1 + int(panel_width * 0.05)
+            hx2 = panel_x2 - int(panel_width * 0.05)
+            hy1 = y - int(item_spacing * 0.35)
+            hy2 = y + int(item_spacing * 0.25)
+            # Accent highlight
+            ov = frame.copy()
+            cv2.rectangle(ov, (hx1, hy1), (hx2, hy2), HUD_ACCENT, -1)
+            cv2.addWeighted(ov, 0.85, frame, 0.15, 0, frame)
+            text_color = (0, 0, 0)
         else:
-            text_color = (255, 255, 255)  # White text
-        
-        # Draw item text (centered)
+            text_color = (200, 200, 200)
+
         text_x = panel_x1 + int(panel_width * 0.08)
-        cv2.putText(
-            frame, item, (text_x, y),
-            cv2.FONT_HERSHEY_SIMPLEX, item_font_scale, text_color, 2
-        )
-    
-    # Instructions at bottom
+        cv2.putText(frame, item, (text_x, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, item_font_scale, text_color, 2)
+
+    # Instructions
     instruction_y = panel_y2 - int(panel_height * 0.08)
     instruction_font_scale = max(0.35, w / 1200)
     cv2.putText(
-        frame,
-        "Swipe to Navigate | Pinch to Select",
+        frame, "Swipe to Navigate  |  Pinch to Select",
         (panel_x1 + int(panel_width * 0.05), instruction_y),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        instruction_font_scale,
-        (180, 180, 180),
-        1,
+        cv2.FONT_HERSHEY_SIMPLEX, instruction_font_scale, (140, 140, 140), 1,
     )
 
 
@@ -127,12 +135,10 @@ game_gesture_controller = GameGestureController()
 def get_active_gesture_controller():
     """Return the appropriate gesture controller based on current state."""
     current_state = state_machine.get_state()
-    
-    # All menu states use MenuGestureController for navigation
+
     if current_state in ("MENU", "GAME_MENU", "MUSIC_MENU", "SPOTIFY_DEVICE_MENU"):
         return menu_gesture_controller
-    
-    # IDLE state: route to module-specific gesture controller
+
     active_mode = mode_manager.get_active_mode()
     if active_mode == "music":
         return music_gesture_controller
@@ -142,7 +148,7 @@ def get_active_gesture_controller():
         return game_gesture_controller
     if active_mode == "drawing":
         return menu_gesture_controller
-    
+
     return menu_gesture_controller
 
 
@@ -159,20 +165,41 @@ mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    model_complexity=0,  # Fastest model
-    min_detection_confidence=0.6,  # Lower for better detection
-    min_tracking_confidence=0.5,  # Lower for smoother tracking
+    model_complexity=0,
+    min_detection_confidence=0.6,
+    min_tracking_confidence=0.5,
 )
 
-cap = cv2.VideoCapture(1, cv2.CAP_ANY)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-cap.set(cv2.CAP_PROP_FPS, 30)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer for lower latency
 
-if not cap.isOpened():
-    print("Camera not accessible. Run: v4l2-ctl --list-devices")
-    exit()
+# ── Camera initialisation with graceful fallback ──────────
+def open_camera():
+    """Try camera index 1, then fall back to 0."""
+    for idx in (1, 0):
+        cap = cv2.VideoCapture(idx, cv2.CAP_ANY)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            print(f"Camera opened on index {idx}")
+            return cap
+        cap.release()
+    return None
+
+
+cap = open_camera()
+if cap is None:
+    print("ERROR: No camera accessible. Run: v4l2-ctl --list-devices")
+    exit(1)
+
+
+# ── FPS counter ────────────────────────────────────────────
+_fps_time = time.time()
+_fps_val = 0
+_fps_count = 0
+
+# ── Calibration / waiting-for-hand state ───────────────────
+_hand_seen = False
 
 
 # ── Main loop ──────────────────────────────────────────────
@@ -182,22 +209,31 @@ while True:
         break
 
     frame = cv2.flip(frame, 1)
+    h, w = frame.shape[:2]
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = hands.process(frame_rgb)
+
+    # ── FPS calculation ────────────────────────────────────
+    _fps_count += 1
+    elapsed = time.time() - _fps_time
+    if elapsed >= 0.5:
+        _fps_val = int(_fps_count / elapsed)
+        _fps_count = 0
+        _fps_time = time.time()
 
     gesture = "NO_HAND"
     stable_gesture = "NO_HAND"
     gesture_controller = get_active_gesture_controller()
 
     if results.multi_hand_landmarks:
+        _hand_seen = True
         for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
             landmarks = []
-            h, w, c = frame.shape
 
-            for id, lm in enumerate(hand_landmarks.landmark):
+            for id_lm, lm in enumerate(hand_landmarks.landmark):
                 cx = int(lm.x * w)
                 cy = int(lm.y * h)
-                landmarks.append((id, cx, cy))
+                landmarks.append((id_lm, cx, cy))
 
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             hand_label = results.multi_handedness[idx].classification[0].label
@@ -219,25 +255,16 @@ while True:
     # ── State-driven rendering ─────────────────────────────
     current_state = state_machine.get_state()
 
-    # Common: gesture label (small, top-left corner)
-    cv2.putText(
-        frame, stable_gesture, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
-    )
-
     if current_state == "MENU":
-        # Top-level menu: MUSIC, SYSTEM, GAMES
         draw_menu(frame, MENU_ITEMS, state_machine.get_menu_index(), "GESTURE HUB")
 
     elif current_state == "GAME_MENU":
-        # Game submenu: DINO, CATCH, FRUIT
         draw_menu(frame, GAME_ITEMS, state_machine.get_menu_index(), "SELECT GAME")
 
     elif current_state == "MUSIC_MENU":
-        # Music submenu: LOCAL MUSIC, SPOTIFY
         draw_menu(frame, MUSIC_ITEMS, state_machine.get_menu_index(), "MUSIC MODE")
 
     elif current_state == "SPOTIFY_DEVICE_MENU":
-        # Spotify device selection menu
         devices = state_machine.spotify_devices
         if devices:
             device_names = [d if isinstance(d, str) else d.get('name', 'Unknown Device') for d in devices]
@@ -246,20 +273,39 @@ while True:
             draw_menu(frame, ["No devices found", "Open Spotify App"], 0, "SPOTIFY DEVICES")
 
     elif current_state == "IDLE":
-        # IDLE state: delegate rendering to active module (no menu overlay)
         active_mode = mode_manager.get_active_mode()
         if active_mode == "drawing":
-            hand_landmarks = None
-            if results.multi_hand_landmarks:
-                hand_landmarks = results.multi_hand_landmarks[0]
-            frame = drawing_board.update(frame, hand_landmarks)
+            hl = results.multi_hand_landmarks[0] if results.multi_hand_landmarks else None
+            frame = drawing_board.update(frame, hl)
         elif active_mode == "catch":
-            hand_landmarks = None
-            if results.multi_hand_landmarks:
-                hand_landmarks = results.multi_hand_landmarks[0]
-            catch.update(frame, hand_landmarks)
+            hl = results.multi_hand_landmarks[0] if results.multi_hand_landmarks else None
+            catch.update(frame, hl)
         else:
             mode_manager.update(frame)
+
+    # ── HUD overlay (top bar) ──────────────────────────────
+    draw_hud_bar(frame, 0, 32)
+
+    # Gesture label
+    cv2.putText(frame, stable_gesture, (10, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.50, HUD_ACCENT, 1)
+
+    # FPS
+    cv2.putText(frame, f"{_fps_val} FPS", (w - 80, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1)
+
+    # Mode indicator (right of gesture label)
+    active_mode = mode_manager.get_active_mode()
+    if active_mode and current_state == "IDLE":
+        cv2.putText(frame, active_mode.upper(), (w // 2 - 30, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.50, (200, 200, 200), 1)
+
+    # ── "Waiting for Hand" calibration overlay ─────────────
+    if not _hand_seen:
+        draw_hud_bar(frame, h // 2 - 30, h // 2 + 30)
+        pulse = int(abs((time.time() * 2 % 2) - 1) * 255)
+        cv2.putText(frame, "Waiting for Hand...", (w // 2 - 120, h // 2 + 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (pulse, 255, pulse), 2)
 
     cv2.imshow("Gesture Control", frame)
     if cv2.waitKey(1) & 0xFF == 27:
