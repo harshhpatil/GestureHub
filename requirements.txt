@@ -1,7 +1,9 @@
+matplotlib
 mediapipe==0.10.9
-opencv-python==4.9.0.80
 numpy==1.26.4
+opencv-python==4.9.0.80
+protobuf==3.20.*
 pyautogui
 pygame
-matplotlib
-protobuf==3.20.*
+spotipy>=2.26.0
+

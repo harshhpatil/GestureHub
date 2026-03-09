@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+  <head>
+    <title>GestureHub Dashboard</title>
+
+    <style>
+      body {
+        font-family: Arial;
+        background: #111;
+        color: #fff;
+        text-align: center;
+        margin-top: 100px;
+      }
+
+      .card {
+        background: #222;
+        padding: 40px;
+        border-radius: 10px;
+        display: inline-block;
+      }
+
+      h1 {
+        color: #00ffcc;
+      }
+
+      .command {
+        font-size: 40px;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="card">
+      <h1>GestureHub Dashboard</h1>
+
+      <p>Last Command</p>
+
+      <div id="command" class="command">Waiting...</div>
+    </div>
+
+    <script>
+      const ws = new WebSocket("ws://localhost:8000/ws");
+
+      ws.onmessage = (event) => {
+        let data = JSON.parse(event.data);
+
+        document.getElementById("command").innerText = data.action;
+      };
+    </script>
+  </body>
+</html>

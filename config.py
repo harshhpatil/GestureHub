@@ -17,7 +17,9 @@ MODEL_COMPLEXITY = 1
 # GESTURE RECOGNITION CONFIGURATION
 GESTURE_THRESHOLD = 0.8
 GESTURE_COOLDOWN = 0.5
-MOTION_SMOOTHING_FRAMES = 5 
+MOTION_SMOOTHING_FRAMES = 5
+STABILITY_FRAMES = 3  # Frames needed for gesture stabilization
+FINGER_DETECTION_THRESHOLD = 15  # Pixel difference for finger up/down detection 
 
 # FINGER TIP INDICES CONFIGURATION
 WRIST = 0
@@ -65,13 +67,29 @@ ASSETS_DIR = 'assets'
 DEBUG_MODE = True                
 ENABLE_LOGGING = True
 
+# NETWORKING CONFIGURATION
+SERVER_HOST = "localhost"
+SERVER_PORT = 8000
+SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}/command"
+REQUEST_TIMEOUT = 2  # Timeout for server requests in seconds
+
+# MUSIC CONTROLLER CONFIGURATION
+DEFAULT_SONGS = [
+    "assets/song-1.mp3",
+    "assets/song-2.mp3",
+    "assets/song-3.mp3"
+]
+SCROLL_AMOUNT = 300  # Pixels to scroll for system controller
+
 # DISTANCE THRESHOLDS (for pinch, click detection)
 PINCH_THRESHOLD = 0.05  # Distance between thumb and index for pinch
 CLICK_THRESHOLD = 0.04
 
 # MOTION GESTURE THRESHOLDS
-SWIPE_THRESHOLD = 100  # Minimum pixel movement for swipe
-SWIPE_VELOCITY_THRESHOLD = 5  # Minimum speed
+SWIPE_THRESHOLD = 80  # Minimum pixel movement for swipe (used in motion_gesture.py)
+SWIPE_VELOCITY_THRESHOLD = 5  # Minimum speed (currently unused)
+MOTION_BUFFER_SIZE = 7  # Number of positions to track for motion detection
+MOTION_COOLDOWN = 0.8  # Cooldown between motion gestures in seconds
 
 # DRAWING COLORS (BGR format for OpenCV)
 COLOR_HAND_CONNECTIONS = (0, 255, 0)  # Green

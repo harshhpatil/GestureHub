@@ -1,37 +1,181 @@
 import cv2
 import mediapipe as mp
 from controllers.music_controller import MusicController
-from gesture_engine.motion_gesture import MotionGestureDetector
+from controllers.drawing_controller import DrawingBoardController
+from command_layer.command_dispatcher import CommandDispatcher
+from controllers.gesture_controller import (
+    MenuGestureController,
+    MusicGestureController,
+    SystemGestureController,
+    GameGestureController,
+)
+from controllers.system_controller import SystemController
+from controllers.dino_controller import DinoGameController
+from controllers.catch_controller import CatchGameController
+from controllers.fruit_controller import FruitGameController
+from networking.server_listener import ServerListener
+from core.mode_manager import ModeManager
+from core.state_machine import StateMachine
+import threading
 
-# Initialize controllers
+
+# ── Menu UI configuration ──────────────────────────────────
+# Top-level menu items (games accessible via submenu)
+MENU_ITEMS = ["MUSIC", "DRAWING", "SYSTEM", "GAMES"]
+GAME_ITEMS = ["DINO", "CATCH", "FRUIT"]
+MUSIC_ITEMS = ["LOCAL MUSIC", "SPOTIFY"]
+
+
+def draw_menu(frame, menu_items, selected_index, title="GESTURE HUB"):
+    """
+    Render a responsive menu overlay on the frame.
+    Scales all UI elements relative to frame dimensions.
+    """
+    h, w = frame.shape[:2]
+    
+    # Calculate responsive dimensions
+    panel_width = int(w * 0.75)
+    panel_height = int(h * 0.7)
+    panel_x1 = (w - panel_width) // 2
+    panel_y1 = int(h * 0.15)
+    panel_x2 = panel_x1 + panel_width
+    panel_y2 = panel_y1 + panel_height
+    
+    # Semi-transparent dark background for menu
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (panel_x1, panel_y1), (panel_x2, panel_y2), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
+    
+    # Title at top of panel
+    title_y = panel_y1 + int(panel_height * 0.12)
+    title_font_scale = max(0.7, w / 800)  # Scale font based on width
+    cv2.putText(
+        frame, title, 
+        (w // 2 - int(len(title) * title_font_scale * 25), title_y),
+        cv2.FONT_HERSHEY_SIMPLEX, title_font_scale, (0, 255, 255), 2
+    )
+    
+    # Calculate menu item positions
+    item_start_y = panel_y1 + int(panel_height * 0.28)
+    item_spacing = int(panel_height * 0.18)
+    item_font_scale = max(0.6, w / 900)
+    
+    # Draw menu items
+    for i, item in enumerate(menu_items):
+        y = item_start_y + i * item_spacing
+        
+        # Highlight selected item with green background
+        if i == selected_index:
+            highlight_x1 = panel_x1 + int(panel_width * 0.05)
+            highlight_x2 = panel_x2 - int(panel_width * 0.05)
+            highlight_y1 = y - int(item_spacing * 0.35)
+            highlight_y2 = y + int(item_spacing * 0.25)
+            cv2.rectangle(frame, (highlight_x1, highlight_y1), (highlight_x2, highlight_y2), (0, 255, 0), -1)
+            text_color = (0, 0, 0)  # Black text on green background
+        else:
+            text_color = (255, 255, 255)  # White text
+        
+        # Draw item text (centered)
+        text_x = panel_x1 + int(panel_width * 0.08)
+        cv2.putText(
+            frame, item, (text_x, y),
+            cv2.FONT_HERSHEY_SIMPLEX, item_font_scale, text_color, 2
+        )
+    
+    # Instructions at bottom
+    instruction_y = panel_y2 - int(panel_height * 0.08)
+    instruction_font_scale = max(0.35, w / 1200)
+    cv2.putText(
+        frame,
+        "Swipe to Navigate | Pinch to Select",
+        (panel_x1 + int(panel_width * 0.05), instruction_y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        instruction_font_scale,
+        (180, 180, 180),
+        1,
+    )
+
+
+# ── Initialize systems ─────────────────────────────────────
 music = MusicController()
-motion = MotionGestureDetector()
+drawing_board = DrawingBoardController()
+system = SystemController()
+dino = DinoGameController()
+catch = CatchGameController()
+fruit = FruitGameController()
 
+dispatcher = CommandDispatcher()
+state_machine = StateMachine(dispatcher)
+mode_manager = ModeManager()
+mode_manager.set_state_machine(state_machine)
+
+mode_manager.register("system", system)
+mode_manager.register("music", music)
+mode_manager.register("drawing", drawing_board)
+mode_manager.register("dino", dino)
+mode_manager.register("catch", catch)
+mode_manager.register("fruit", fruit)
+
+dispatcher.register_router(mode_manager)
+
+menu_gesture_controller = MenuGestureController()
+music_gesture_controller = MusicGestureController()
+system_gesture_controller = SystemGestureController()
+game_gesture_controller = GameGestureController()
+
+
+def get_active_gesture_controller():
+    """Return the appropriate gesture controller based on current state."""
+    current_state = state_machine.get_state()
+    
+    # All menu states use MenuGestureController for navigation
+    if current_state in ("MENU", "GAME_MENU", "MUSIC_MENU", "SPOTIFY_DEVICE_MENU"):
+        return menu_gesture_controller
+    
+    # IDLE state: route to module-specific gesture controller
+    active_mode = mode_manager.get_active_mode()
+    if active_mode == "music":
+        return music_gesture_controller
+    if active_mode == "system":
+        return system_gesture_controller
+    if active_mode in ["dino", "catch", "fruit"]:
+        return game_gesture_controller
+    if active_mode == "drawing":
+        return menu_gesture_controller
+    
+    return menu_gesture_controller
+
+
+# Server listener thread (daemon – auto-exits with main)
+listener = ServerListener(dispatcher)
+listener_thread = threading.Thread(target=listener.start, daemon=True)
+listener_thread.start()
+
+
+# ── MediaPipe setup ────────────────────────────────────────
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=1,
-    model_complexity=0,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.6
+    model_complexity=0,  # Fastest model
+    min_detection_confidence=0.6,  # Lower for better detection
+    min_tracking_confidence=0.5,  # Lower for smoother tracking
 )
 
-# FIXED: Camera index 1 (as you confirmed) + proper settings
 cap = cv2.VideoCapture(1, cv2.CAP_ANY)
-cap.set(3, 640)
-cap.set(4, 480)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+cap.set(cv2.CAP_PROP_FPS, 30)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer for lower latency
 
 if not cap.isOpened():
     print("Camera not accessible. Run: v4l2-ctl --list-devices")
     exit()
 
-prev_gesture = None
-gesture_history = []
-STABILITY_FRAMES = 3
 
+# ── Main loop ──────────────────────────────────────────────
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -41,17 +185,15 @@ while True:
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = hands.process(frame_rgb)
 
-    fingers = [0, 0, 0, 0, 0]
-    gesture = "NO HAND"
-    stable_gesture = "NO HAND"  # FIXED: Define outside if-block
-    hand_label = "None"
+    gesture = "NO_HAND"
+    stable_gesture = "NO_HAND"
+    gesture_controller = get_active_gesture_controller()
 
     if results.multi_hand_landmarks:
         for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
             landmarks = []
             h, w, c = frame.shape
 
-            # Collect landmarks
             for id, lm in enumerate(hand_landmarks.landmark):
                 cx = int(lm.x * w)
                 cy = int(lm.y * h)
@@ -60,91 +202,71 @@ while True:
             mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
             hand_label = results.multi_handedness[idx].classification[0].label
 
-            # Thumb detection (left/right aware)
-            if hand_label == "Right":
-                if landmarks[4][1] > landmarks[3][1]:
-                    fingers[0] = 1
-            else:
-                if landmarks[4][1] < landmarks[3][1]:
-                    fingers[0] = 1
+            fingers = gesture_controller.process_landmarks(landmarks, hand_label)
+            gesture = gesture_controller.classify_gesture(fingers)
 
-            # Other fingers with threshold filtering
-            if landmarks[6][2] - landmarks[8][2] > 15:    # Index
-                fingers[1] = 1
-            if landmarks[10][2] - landmarks[12][2] > 15:  # Middle
-                fingers[2] = 1
-            if landmarks[14][2] - landmarks[16][2] > 15:  # Ring
-                fingers[3] = 1
-            if landmarks[18][2] - landmarks[20][2] > 15:  # Pinky
-                fingers[4] = 1
+            hand_pos = (landmarks[0][1], landmarks[0][2])
 
-            # Motion tracking
-            hand_center_x = landmarks[0][1]
-            motion.update(hand_center_x)
+            stable_gesture = gesture_controller.stabilize(gesture)
+            commands = gesture_controller.detect_commands(
+                stable_gesture, hand_pos, landmarks
+            )
 
-            # Gesture Classification
-            if sum(fingers) == 0:
-                gesture = "FIST"
-            elif fingers == [0, 1, 0, 0, 0]:
-                gesture = "INDEX"
-            elif sum(fingers) >= 4:
-                gesture = "OPEN PALM"
-            elif fingers == [0, 1, 1, 1, 0]:
-                gesture = "THREE FINGERS"
-            else:
-                gesture = "UNKNOWN"
+            state_machine.handle_commands(commands)
+    else:
+        stable_gesture = gesture_controller.stabilize("NO_HAND")
 
-            # Stability Filter
-            if gesture != "UNKNOWN" and gesture != "NO HAND":
-                gesture_history.append(gesture)
-                if len(gesture_history) > STABILITY_FRAMES:
-                    gesture_history.pop(0)
+    # ── State-driven rendering ─────────────────────────────
+    current_state = state_machine.get_state()
 
-            if len(gesture_history) == STABILITY_FRAMES:
-                stable_gesture = max(set(gesture_history), key=gesture_history.count)
+    # Common: gesture label (small, top-left corner)
+    cv2.putText(
+        frame, stable_gesture, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2
+    )
 
-            # Trigger Logic
-            if (stable_gesture != prev_gesture and 
-                stable_gesture != "NO HAND" and 
-                stable_gesture != "UNKNOWN"):
-                
-                print(f"TRIGGER: {stable_gesture} (prev: {prev_gesture})")
-                
-                if stable_gesture == "INDEX":
-                    music.toggle_play_pause()
-                elif stable_gesture == "FIST":
-                    music.stop_music()
-                
-                prev_gesture = stable_gesture
+    if current_state == "MENU":
+        # Top-level menu: MUSIC, SYSTEM, GAMES
+        draw_menu(frame, MENU_ITEMS, state_machine.get_menu_index(), "GESTURE HUB")
 
-    # SWIPE LOGIC (MOVED OUTSIDE - now safe)
-    swipe = None
-    if stable_gesture == "THREE FINGERS":
-        swipe = motion.detect_swipe()
-        if swipe == "SWIPE_RIGHT":
-            print("SWIPE RIGHT - Next Track")
-            music.next_track()
-        elif swipe == "SWIPE_LEFT":
-            print("SWIPE LEFT - Previous Track")
-            music.prev_track()
+    elif current_state == "GAME_MENU":
+        # Game submenu: DINO, CATCH, FRUIT
+        draw_menu(frame, GAME_ITEMS, state_machine.get_menu_index(), "SELECT GAME")
 
-    # Display Info
-    cv2.putText(frame, gesture, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
-    cv2.putText(frame, str(fingers), (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-    
-    status = music.get_status()
-    cv2.putText(frame, f"Music: {status}", (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-    
-    # Hand label and SWIPE MODE
-    cv2.putText(frame, hand_label, (400, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-    if stable_gesture == "THREE FINGERS":
-        cv2.putText(frame, "SWIPE MODE", (50, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+    elif current_state == "MUSIC_MENU":
+        # Music submenu: LOCAL MUSIC, SPOTIFY
+        draw_menu(frame, MUSIC_ITEMS, state_machine.get_menu_index(), "MUSIC MODE")
+
+    elif current_state == "SPOTIFY_DEVICE_MENU":
+        # Spotify device selection menu
+        devices = state_machine.spotify_devices
+        if devices:
+            device_names = [d if isinstance(d, str) else d.get('name', 'Unknown Device') for d in devices]
+            draw_menu(frame, device_names, state_machine.get_menu_index(), "SPOTIFY DEVICES")
+        else:
+            draw_menu(frame, ["No devices found", "Open Spotify App"], 0, "SPOTIFY DEVICES")
+
+    elif current_state == "IDLE":
+        # IDLE state: delegate rendering to active module (no menu overlay)
+        active_mode = mode_manager.get_active_mode()
+        if active_mode == "drawing":
+            hand_landmarks = None
+            if results.multi_hand_landmarks:
+                hand_landmarks = results.multi_hand_landmarks[0]
+            frame = drawing_board.update(frame, hand_landmarks)
+        elif active_mode == "catch":
+            hand_landmarks = None
+            if results.multi_hand_landmarks:
+                hand_landmarks = results.multi_hand_landmarks[0]
+            catch.update(frame, hand_landmarks)
+        else:
+            mode_manager.update(frame)
 
     cv2.imshow("Gesture Control", frame)
     if cv2.waitKey(1) & 0xFF == 27:
         break
 
-# Cleanup
+
+# ── Cleanup ────────────────────────────────────────────────
+hands.close()
 cap.release()
 cv2.destroyAllWindows()
-gesture_history.clear()

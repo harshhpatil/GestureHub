@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+  <head>
+    <title>GestureHub Remote</title>
+
+    <style>
+      body {
+        background: #111;
+        color: white;
+        text-align: center;
+        font-family: Arial;
+      }
+
+      button {
+        width: 200px;
+        height: 60px;
+        font-size: 20px;
+        margin: 10px;
+        border: none;
+        border-radius: 10px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>GestureHub Remote</h1>
+
+    <button onclick="send('TOGGLE_PLAY')">Play / Pause</button><br />
+    <button onclick="send('NEXT_TRACK')">Next</button><br />
+    <button onclick="send('PREV_TRACK')">Previous</button><br />
+    <button onclick="send('VOL_UP')">Volume Up</button><br />
+    <button onclick="send('VOL_DOWN')">Volume Down</button>
+
+    <script>
+      const SERVER = "http://10.189.251.182:8000/command";
+
+      function send(cmd) {
+        fetch(SERVER, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: cmd }),
+        });
+      }
+    </script>
+  </body>
+</html>
