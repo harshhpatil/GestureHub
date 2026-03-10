@@ -1,52 +1,183 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GestureHub Dashboard</title>
-
     <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
       body {
-        font-family: Arial;
-        background: #111;
-        color: #fff;
+        font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        background: #0b0e11;
+        color: #e0e0e0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 40px 20px;
+      }
+
+      /* ── header ─────────────────────────────────────── */
+      .header {
         text-align: center;
-        margin-top: 100px;
+        margin-bottom: 32px;
       }
-
-      .card {
-        background: #222;
-        padding: 40px;
-        border-radius: 10px;
-        display: inline-block;
-      }
-
-      h1 {
+      .header h1 {
+        font-size: 1.8rem;
+        font-weight: 700;
         color: #00ffcc;
+        letter-spacing: 0.06em;
+      }
+      .header p {
+        font-size: 0.85rem;
+        color: #666;
+        margin-top: 6px;
+      }
+      .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #555;
+        margin-right: 6px;
+        vertical-align: middle;
+        transition: background 0.3s;
+      }
+      .status-dot.connected {
+        background: #00ffcc;
+        box-shadow: 0 0 6px #00ffcc88;
       }
 
-      .command {
-        font-size: 40px;
-        margin-top: 20px;
+      /* ── glass card ─────────────────────────────────── */
+      .card {
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 36px 44px;
+        width: 100%;
+        max-width: 480px;
+        text-align: center;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .card-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: #666;
+        margin-bottom: 12px;
+      }
+      .command-display {
+        font-size: 2.4rem;
+        font-weight: 700;
+        color: #00ffcc;
+        min-height: 56px;
+        transition: color 0.2s;
+        word-break: break-word;
+      }
+
+      /* ── activity log ───────────────────────────────── */
+      .log-section {
+        width: 100%;
+        max-width: 480px;
+        margin-top: 28px;
+      }
+      .log-section h3 {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #555;
+        margin-bottom: 10px;
+      }
+      .log-list {
+        list-style: none;
+        max-height: 180px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: #333 transparent;
+      }
+      .log-list li {
+        font-size: 0.82rem;
+        padding: 6px 12px;
+        border-left: 2px solid #222;
+        margin-bottom: 4px;
+        color: #888;
+        transition: border-color 0.2s;
+      }
+      .log-list li:first-child {
+        color: #ccc;
+        border-left-color: #00ffcc;
+      }
+      .log-list li .ts {
+        color: #444;
+        margin-right: 8px;
+        font-size: 0.72rem;
       }
     </style>
   </head>
 
   <body>
+    <div class="header">
+      <h1>GestureHub</h1>
+      <p><span id="dot" class="status-dot"></span><span id="status-text">Connecting…</span></p>
+    </div>
+
     <div class="card">
-      <h1>GestureHub Dashboard</h1>
+      <div class="card-label">Last Command</div>
+      <div id="command" class="command-display">—</div>
+    </div>
 
-      <p>Last Command</p>
-
-      <div id="command" class="command">Waiting...</div>
+    <div class="log-section">
+      <h3>Activity Log</h3>
+      <ul id="log" class="log-list"></ul>
     </div>
 
     <script>
-      const ws = new WebSocket("ws://localhost:8000/ws");
+      const MAX_LOG = 30;
+      const cmdEl = document.getElementById("command");
+      const logEl = document.getElementById("log");
+      const dotEl = document.getElementById("dot");
+      const statusEl = document.getElementById("status-text");
 
-      ws.onmessage = (event) => {
-        let data = JSON.parse(event.data);
+      function ts() {
+        return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
 
-        document.getElementById("command").innerText = data.action;
-      };
+      function addLog(text) {
+        const li = document.createElement("li");
+        li.innerHTML = '<span class="ts">' + ts() + "</span>" + text;
+        logEl.prepend(li);
+        while (logEl.children.length > MAX_LOG) logEl.removeChild(logEl.lastChild);
+      }
+
+      function connect() {
+        const ws = new WebSocket("ws://" + location.hostname + ":8000/ws");
+
+        ws.onopen = function () {
+          dotEl.classList.add("connected");
+          statusEl.textContent = "Connected";
+        };
+
+        ws.onmessage = function (event) {
+          var data = JSON.parse(event.data);
+          cmdEl.textContent = data.action;
+          addLog(data.action);
+        };
+
+        ws.onclose = function () {
+          dotEl.classList.remove("connected");
+          statusEl.textContent = "Reconnecting…";
+          setTimeout(connect, 2000);
+        };
+      }
+
+      connect();
     </script>
   </body>
 </html>
