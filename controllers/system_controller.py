@@ -180,12 +180,16 @@ class SystemController(BaseController):
                 pyautogui.hscroll(300)
 
         elif command == "SCREENSHOT":
+            # If tab switcher is open, close it first to avoid accidental focus switch
+            if self.recent_tabs_open:
+                try:
+                    pyautogui.keyUp("alt")
+                except:
+                    pass
+                self.recent_tabs_open = False
 
             pyautogui.screenshot("screenshot.png")
             print("Screenshot saved")
-
-            pyautogui.hotkey("alt", "tab")
-            print("Switching window")
 
         elif command == "RESET":
 

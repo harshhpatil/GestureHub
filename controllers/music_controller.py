@@ -1,6 +1,7 @@
 from controllers.base_controller import BaseController
 import cv2
 import os
+import logging
 from pathlib import Path
 
 try:
@@ -14,16 +15,21 @@ except ImportError:
 try:
     import spotipy
     from spotipy.oauth2 import SpotifyOAuth
+    from spotipy.exceptions import SpotifyException
     import spotify_config
     SPOTIFY_AVAILABLE = True
 except ImportError:
     SPOTIFY_AVAILABLE = False
     print("WARNING: spotipy not installed. Install with: pip install spotipy")
 
+# Reduce noisy internal spotipy logging in app logs
+logging.getLogger("spotipy").setLevel(logging.CRITICAL)
+
 
 class MusicController(BaseController):
     def __init__(self):
         self.mode = "spotify"  # "local" or "spotify"
+        self.spotify_ready = False
         self.music_playing = False
         self.current_track = "No track"
         self.current_artist = "Unknown"
@@ -49,11 +55,17 @@ class MusicController(BaseController):
             self._load_local_tracks()
         
         if SPOTIFY_AVAILABLE:
-            self._init_spotify()
+            self.spotify_ready = self._init_spotify()
         else:
             print("ERROR: Spotify integration requires spotipy library")
-            if not PYGAME_AVAILABLE:
-                raise ImportError("Neither pygame nor spotipy available")
+
+        # Graceful fallback when Spotify is unavailable / offline / misconfigured
+        if not self.spotify_ready:
+            if PYGAME_AVAILABLE:
+                self.mode = "local"
+                print("→ Falling back to LOCAL music mode")
+            else:
+                raise ImportError("Neither Spotify nor local music playback is available")
 
     def _init_spotify(self):
         """Initialize Spotify client with OAuth authentication."""
@@ -70,7 +82,7 @@ class MusicController(BaseController):
                 print("4. Edit spotify_config.py with your credentials")
                 print("5. Make sure you have Spotify Premium")
                 print("=" * 60)
-                raise ValueError("Spotify credentials not configured in spotify_config.py")
+                return False
 
             auth_manager = SpotifyOAuth(
                 client_id=spotify_config.SPOTIFY_CLIENT_ID,
@@ -108,10 +120,12 @@ class MusicController(BaseController):
 
             # Get current playback state
             self._update_playback_state()
+            return True
 
         except Exception as e:
             print(f"ERROR: Failed to initialize Spotify: {e}")
-            raise
+            self.sp = None
+            return False
 
     def _load_local_tracks(self):
         """Load MP3 files from assets directory."""
@@ -373,6 +387,13 @@ class MusicController(BaseController):
                     return
             
             self._update_playback_state(force=True)
+        except SpotifyException as e:
+            msg = str(e)
+            if "Restriction violated" in msg or "403" in msg:
+                print("Spotify rejected playback command (restricted context/device).")
+                print("Tip: Open Spotify app on an active device and play any track first.")
+            else:
+                print(f"Spotify error toggling playback: {e}")
         except Exception as e:
             print(f"Error toggling playback: {e}")
             print("Make sure Spotify is open on a device")
@@ -384,6 +405,12 @@ class MusicController(BaseController):
             self.music_playing = False
             print("Music Stopped")
             self._update_playback_state(force=True)
+        except SpotifyException as e:
+            msg = str(e)
+            if "Restriction violated" in msg or "403" in msg:
+                print("Spotify pause blocked (restricted context/device).")
+            else:
+                print(f"Spotify error stopping playback: {e}")
         except Exception as e:
             print(f"Error stopping playback: {e}")
 

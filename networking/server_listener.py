@@ -22,6 +22,9 @@ class ServerListener:
                 command = r.get("action")
 
                 if command:
+                    if self.dispatcher.is_recent_local_echo(command):
+                        # Skip local echo to prevent duplicate execution (toggle/pause conflicts)
+                        continue
                     print("SERVER COMMAND:", command)
                     # Dispatch with from_server=True to prevent POST back to server
                     self.dispatcher.dispatch(command, from_server=True)

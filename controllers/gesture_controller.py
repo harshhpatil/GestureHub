@@ -82,7 +82,7 @@ class BaseGestureController:
         # Original gestures
         if sum(fingers) == 0:
             return "FIST"
-        elif fingers == [0,1,0,0,0] or (fingers[0] == 1 and sum(fingers[1:]) == 0):
+        elif fingers[1:] == [1,0,0,0]:
             return "INDEX"
         elif fingers[1:] == [1,1,0,0]:  # index + middle (thumb ignored)
             return "TWO_FINGERS"
@@ -153,14 +153,24 @@ class MenuGestureController(BaseGestureController):
 
 
 class MusicGestureController(BaseGestureController):
+    def __init__(self):
+        super().__init__()
+        self.reset_guard_until = 0
+
     def detect_commands(self, stable_gesture, hand_pos, landmarks=None):
         commands = []
+        now = time.time()
 
         if stable_gesture != self.prev_gesture and stable_gesture not in ["NO_HAND", "UNKNOWN"]:
             self.motion.clear_buffer()
 
         if stable_gesture == "OPEN_PALM":
             commands.append("RESET")
+            self.reset_guard_until = now + 0.8
+            self.prev_gesture = stable_gesture
+
+        elif now < self.reset_guard_until:
+            # Ignore transient gestures right after palm-reset to avoid accidental STOP/TOGGLE
             self.prev_gesture = stable_gesture
 
         elif (stable_gesture and stable_gesture != "NO_HAND" and
@@ -168,8 +178,6 @@ class MusicGestureController(BaseGestureController):
 
             if stable_gesture == "INDEX":
                 commands.append("TOGGLE_PLAY")
-            elif stable_gesture == "FIST":
-                commands.append("STOP")
             elif stable_gesture == "THUMBS_UP":
                 commands.append("VOLUME_UP")
             elif stable_gesture == "THUMBS_DOWN":
@@ -194,12 +202,32 @@ class MusicGestureController(BaseGestureController):
 
 
 class SystemGestureController(BaseGestureController):
+    def __init__(self):
+        super().__init__()
+        self.action_lock_until = 0
+        self.volume_repeat_interval = 0.18
+        self.last_volume_emit = 0
+
     def detect_commands(self, stable_gesture, hand_pos, landmarks=None):
         commands = []
         now = time.time()
 
         if stable_gesture != self.prev_gesture and stable_gesture not in ["NO_HAND", "UNKNOWN"]:
             self.motion.clear_buffer()
+
+        # Continuous volume control while thumb gesture is held
+        if stable_gesture in ("THUMBS_UP", "THUMBS_DOWN"):
+            if stable_gesture != self.prev_gesture:
+                self.last_volume_emit = 0
+
+            if now - self.last_volume_emit >= self.volume_repeat_interval:
+                if stable_gesture == "THUMBS_UP":
+                    commands.append("VOLUME_UP")
+                else:
+                    commands.append("VOLUME_DOWN")
+                self.last_volume_emit = now
+
+            self.prev_gesture = stable_gesture
 
         if stable_gesture == "OPEN_PALM":
             commands.append("RESET")
@@ -208,16 +236,19 @@ class SystemGestureController(BaseGestureController):
         elif (stable_gesture and stable_gesture != "NO_HAND" and
               stable_gesture != self.prev_gesture):
 
-            if stable_gesture == "THUMBS_UP":
-                commands.append("VOLUME_UP")
-            elif stable_gesture == "THUMBS_DOWN":
-                commands.append("VOLUME_DOWN")
-            elif stable_gesture == "ROCK":
+            if stable_gesture == "ROCK":
                 commands.append("SCREENSHOT")
+                self.pinch_armed_until = 0
+                self.motion.clear_buffer()
+                self.action_lock_until = now + 0.35
 
             self.prev_gesture = stable_gesture
 
         if stable_gesture == "TWO_FINGERS":
+            if now < self.action_lock_until:
+                self._update_pinch_state(landmarks)
+                return commands
+
             if landmarks is not None and self.is_index_middle_victory(landmarks):
                 if self.prev_gesture != "TWO_FINGERS_VICTORY":
                     commands.append("LEFT_CLICK")
@@ -242,6 +273,9 @@ class SystemGestureController(BaseGestureController):
                     commands.append("SCROLL_UP")
                 elif scroll == "SCROLL_DOWN":
                     commands.append("SCROLL_DOWN")
+
+        if stable_gesture not in ("THUMBS_UP", "THUMBS_DOWN"):
+            self.last_volume_emit = 0
 
         self._update_pinch_state(landmarks)
         return commands
