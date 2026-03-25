@@ -61,3 +61,23 @@ wheels/
 Thumbs.db
 
 *.logs
+
+# --- Node.js ---
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# --- Frontend build ---
+frontend/dist/
+frontend/.env
+
+# --- Backend runtime ---
+backend/.env
+backend/gesturehub.db
+backend/*.db
+
+# --- Docker ---
+.docker/
+
+# --- Certificates ---
+nginx/certs/
