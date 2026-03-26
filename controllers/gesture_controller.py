@@ -137,8 +137,8 @@ class MenuGestureController(BaseGestureController):
             self.motion.clear_buffer()
 
         if stable_gesture == "OPEN_PALM":
-            commands.append("RESET")
             self.prev_gesture = stable_gesture
+            commands.append("RESET")
 
         if stable_gesture == "TWO_FINGERS":
             self.prev_gesture = "TWO_FINGERS"
