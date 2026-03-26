@@ -136,6 +136,10 @@ class MenuGestureController(BaseGestureController):
         if stable_gesture != self.prev_gesture and stable_gesture not in ["NO_HAND", "UNKNOWN"]:
             self.motion.clear_buffer()
 
+        if stable_gesture == "OPEN_PALM":
+            commands.append("RESET")
+            self.prev_gesture = stable_gesture
+
         if stable_gesture == "TWO_FINGERS":
             self.prev_gesture = "TWO_FINGERS"
             self.motion.update(hand_pos)
