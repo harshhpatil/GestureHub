@@ -1,0 +1,12 @@
+matplotlib
+mediapipe==0.10.14
+numpy==1.26.4
+opencv-python==4.9.0.80
+protobuf==4.25.3
+pyautogui
+pygame
+spotipy>=2.26.0
+psutil>=5.9.0
+uvicorn
+fastapi
+requests>=2.31.0

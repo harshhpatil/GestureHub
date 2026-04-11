@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime cache
+.spotify_cache
+
+# Build artifacts
+build/
+dist/
+deb_build/
+*.deb
+
+# OS/editor noise
+.DS_Store
+.vscode/
